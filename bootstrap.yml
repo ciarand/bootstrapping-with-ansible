@@ -1,0 +1,45 @@
+- hosts: all
+  remote_user: root
+  tasks:
+    - name: Add an "admin" group
+      group: name=admin state=present
+
+    - name: Setup a user account in the admin group
+      user: >
+        name=ciarand
+        shell=/bin/bash
+        groups=admin
+        state=present
+
+    - name: Add the admin group to the sudoers file (w/ verification)
+      lineinfile: >
+        dest=/etc/sudoers
+        regexp='^%ADMIN ALL\='
+        line='%ADMIN ALL=(ALL) NOPASSWD:ALL'
+        state=present
+        validate='visudo -cf %s'
+
+    - name: Install openssh-server b/c Ubuntu
+      apt: name=openssh-server state=present
+
+    - name: Copy our public key over
+      authorized_key: >
+        key="{{ lookup('file', '~/.ssh/id_rsa.pub') }}"
+        user=ciarand
+        state=present
+
+    - name: Disallow SSH root access
+      lineinfile: >
+        dest=/etc/ssh/sshd_config
+        regexp="{{ item.regexp }}"
+        line="{{ item.line }}"
+        state=present
+      notify: restart sshd
+      with_items:
+        - { regexp: "^PermitRootLogin", line: "PermitRootLogin no" }
+        - { regexp: "^PasswordAuthentication", line: "PasswordAuthentication no" }
+        - { regexp: "^GSSAPIAuthentication", line: "GSSAPIAuthentication no" }
+
+  handlers:
+    - name: restart sshd
+      service: name=ssh state=restarted
